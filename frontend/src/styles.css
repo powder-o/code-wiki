@@ -107,6 +107,40 @@ h2 { font-size: 20px; margin: 0 0 12px; }
 .form .hint { color: var(--fg-muted); font-size: 11px; }
 .form-actions { display: flex; gap: 8px; }
 
+.segmented {
+  display: inline-flex;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px;
+  align-self: flex-start;
+}
+.segmented .seg {
+  background: transparent;
+  border: none;
+  color: var(--fg-muted);
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+}
+.segmented .seg.active {
+  background: var(--bg-elev-2);
+  color: var(--fg);
+}
+
+.tag {
+  display: inline-block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg-muted);
+  background: var(--bg-elev-2);
+}
+
 .project-detail { display: flex; flex-direction: column; gap: 16px; }
 .project-header {
   display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;

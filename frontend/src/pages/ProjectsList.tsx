@@ -34,9 +34,13 @@ export default function ProjectsList() {
                 <strong>{p.name}</strong>
                 <span className={`status status-${p.status}`}>{p.status}</span>
               </div>
-              <div className="muted small">{p.repo_url}</div>
               <div className="muted small">
-                {p.llm_provider} · branch {p.branch}
+                <span className="tag">{p.source_type === "local" ? "local" : "git"}</span>
+                {" "}{p.repo_url}
+              </div>
+              <div className="muted small">
+                {p.llm_provider}
+                {p.source_type === "git" ? ` · branch ${p.branch}` : ""}
                 {p.status_detail ? ` · ${p.status_detail}` : ""}
               </div>
             </Link>

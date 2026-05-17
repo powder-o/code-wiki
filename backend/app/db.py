@@ -19,8 +19,9 @@ class Project(Base):
     __tablename__ = "projects"
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
-    repo_url = Column(String, nullable=False)
-    branch = Column(String, default="main")
+    source_type = Column(String, nullable=False, default="git")  # "git" | "local"
+    repo_url = Column(String, nullable=False)  # git URL, or absolute local path
+    branch = Column(String, default="main")  # unused for source_type=="local"
     llm_provider = Column(String, nullable=False)  # "azure_openai" | "gemini"
     llm_config = Column(Text)  # JSON blob (per-project overrides, optional)
     last_commit_sha = Column(String)

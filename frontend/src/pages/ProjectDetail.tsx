@@ -66,7 +66,10 @@ export default function ProjectDetail() {
         <div>
           <h1>{project.name}</h1>
           <div className="muted small">
-            {project.repo_url} · branch {project.branch} · {project.llm_provider}
+            <span className="tag">{project.source_type === "local" ? "local" : "git"}</span>
+            {" "}{project.repo_url}
+            {project.source_type === "git" ? ` · branch ${project.branch}` : ""}
+            {" · "}{project.llm_provider}
           </div>
           <div className="muted small">
             <span className={`status status-${project.status}`}>{project.status}</span>

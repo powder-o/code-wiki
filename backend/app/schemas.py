@@ -4,11 +4,13 @@ from pydantic import BaseModel, Field
 
 
 LLMProviderName = Literal["azure_openai", "gemini"]
+SourceType = Literal["git", "local"]
 
 
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1)
-    repo_url: str = Field(min_length=1)
+    source_type: SourceType = "git"
+    repo_url: str = Field(min_length=1)  # git URL or absolute local path
     branch: str = "main"
     llm_provider: LLMProviderName
     llm_config: dict | None = None  # optional per-project overrides
@@ -17,6 +19,7 @@ class ProjectCreate(BaseModel):
 class ProjectOut(BaseModel):
     id: int
     name: str
+    source_type: str
     repo_url: str
     branch: str
     llm_provider: str

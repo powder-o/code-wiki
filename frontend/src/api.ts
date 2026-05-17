@@ -1,8 +1,10 @@
 export type LLMProviderName = "azure_openai" | "gemini";
+export type SourceType = "git" | "local";
 
 export interface Project {
   id: number;
   name: string;
+  source_type: SourceType;
   repo_url: string;
   branch: string;
   llm_provider: string;
@@ -25,6 +27,7 @@ export interface DocPageContent extends DocPage {
 
 export interface ProjectCreate {
   name: string;
+  source_type: SourceType;
   repo_url: string;
   branch: string;
   llm_provider: LLMProviderName;

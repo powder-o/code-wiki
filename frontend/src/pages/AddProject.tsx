@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, LLMProviderName } from "../api";
+import { api, LLMProviderName, SourceType } from "../api";
 
 export default function AddProject() {
   const nav = useNavigate();
   const [name, setName] = useState("");
+  const [sourceType, setSourceType] = useState<SourceType>("git");
   const [repoUrl, setRepoUrl] = useState("");
   const [branch, setBranch] = useState("main");
   const [provider, setProvider] = useState<LLMProviderName>("azure_openai");
@@ -27,7 +28,12 @@ export default function AddProject() {
         }
       }
       const project = await api.createProject({
-        name, repo_url: repoUrl, branch, llm_provider: provider, llm_config,
+        name,
+        source_type: sourceType,
+        repo_url: repoUrl.trim(),
+        branch,
+        llm_provider: provider,
+        llm_config,
       });
       await api.analyze(project.id);
       nav(`/projects/${project.id}`);
@@ -37,6 +43,8 @@ export default function AddProject() {
       setSubmitting(false);
     }
   }
+
+  const isLocal = sourceType === "local";
 
   return (
     <form onSubmit={onSubmit} className="form">
@@ -48,17 +56,56 @@ export default function AddProject() {
                placeholder="my-service" />
       </label>
 
-      <label>
-        Repo URL
-        <input value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} required
-               placeholder="https://github.com/owner/repo.git" />
-        <span className="hint">For private repos, include credentials in the URL (e.g. https://oauth2:TOKEN@…)</span>
-      </label>
+      <div className="segmented">
+        <button type="button"
+                className={!isLocal ? "seg active" : "seg"}
+                onClick={() => setSourceType("git")}>
+          Git repo
+        </button>
+        <button type="button"
+                className={isLocal ? "seg active" : "seg"}
+                onClick={() => setSourceType("local")}>
+          Local path
+        </button>
+      </div>
 
-      <label>
-        Branch
-        <input value={branch} onChange={(e) => setBranch(e.target.value)} />
-      </label>
+      {isLocal ? (
+        <label>
+          Local path
+          <input
+            value={repoUrl}
+            onChange={(e) => setRepoUrl(e.target.value)}
+            required
+            placeholder="/Users/you/code/my-project"
+          />
+          <span className="hint">
+            Absolute path to a directory on this machine. The backend reads it
+            directly — no copy is made, so updates re-read whatever is on disk
+            when you click "Update docs".
+          </span>
+        </label>
+      ) : (
+        <>
+          <label>
+            Repo URL
+            <input
+              value={repoUrl}
+              onChange={(e) => setRepoUrl(e.target.value)}
+              required
+              placeholder="https://github.com/owner/repo.git"
+            />
+            <span className="hint">
+              For private repos, include credentials in the URL (e.g.
+              https://oauth2:TOKEN@…)
+            </span>
+          </label>
+
+          <label>
+            Branch
+            <input value={branch} onChange={(e) => setBranch(e.target.value)} />
+          </label>
+        </>
+      )}
 
       <label>
         LLM provider

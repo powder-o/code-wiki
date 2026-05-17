@@ -19,18 +19,29 @@ def list_projects():
 
 @router.post("", response_model=ProjectOut)
 def create_project(body: ProjectCreate):
+    # Validate the source up-front so the user gets a clear error instead
+    # of a background-task failure they have to dig out of the detail page.
+    if body.source_type == "local":
+        from pathlib import Path
+        p = Path(body.repo_url)
+        if not p.is_absolute():
+            raise HTTPException(400, "Local path must be absolute")
+        if not p.exists() or not p.is_dir():
+            raise HTTPException(400, f"Local path is not a directory: {p}")
+
     with session_scope() as s:
-        p = Project(
+        proj = Project(
             name=body.name,
+            source_type=body.source_type,
             repo_url=body.repo_url,
             branch=body.branch,
             llm_provider=body.llm_provider,
             llm_config=json.dumps(body.llm_config) if body.llm_config else None,
             status="created",
         )
-        s.add(p)
+        s.add(proj)
         s.flush()
-        return ProjectOut.model_validate(p)
+        return ProjectOut.model_validate(proj)
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
@@ -95,13 +106,18 @@ def analyze(project_id: int, bg: BackgroundTasks):
 
 @router.post("/{project_id}/update", response_model=None)
 def update(project_id: int, bg: BackgroundTasks):
+    from ..db import FileRecord
     with session_scope() as s:
         p = s.get(Project, project_id)
         if not p:
             raise HTTPException(404, "Project not found")
         if p.status == "analyzing":
             raise HTTPException(409, "Project is already being analyzed")
-        if not p.last_commit_sha:
+        has_baseline = (
+            s.query(FileRecord.id).filter(FileRecord.project_id == project_id).first()
+            is not None
+        )
+        if not has_baseline:
             raise HTTPException(
                 400,
                 "Project has not been analyzed yet — run /analyze first",

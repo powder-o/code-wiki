@@ -4,7 +4,7 @@ import logging
 
 from ..db import session_scope, Project, FileRecord, DocPage
 from ..llm import get_provider
-from ..repo.cloner import clone_or_pull, repo_path
+from ..repo.cloner import prepare_source, working_path
 from ..repo.walker import walk_repo
 from .analyzer import (
     docs_dir, _module_slug, _set_status, _summarize_files_by_path,
@@ -17,15 +17,15 @@ from .prompts import DOC_PATCH_SYSTEM, DOC_PATCH_USER
 log = logging.getLogger("codewiki.updater")
 
 
-def _diff_against_db(project_id: int) -> tuple[list[str], list[str], list[str], dict[str, str]]:
+def _diff_against_db(project: Project) -> tuple[list[str], list[str], list[str], dict[str, str]]:
     """Walk the repo and compare against stored FileRecord hashes.
     Returns (added, modified, deleted, current_hash_by_path)."""
-    walked = walk_repo(repo_path(project_id))
+    walked = walk_repo(working_path(project))
     current = {f.path: f.sha256 for f in walked}
 
     with session_scope() as s:
         records = (
-            s.query(FileRecord).filter(FileRecord.project_id == project_id).all()
+            s.query(FileRecord).filter(FileRecord.project_id == project.id).all()
         )
         prev = {r.path: r.sha256 for r in records}
 
@@ -41,20 +41,24 @@ def _module_of(path: str) -> str:
 
 
 async def run_update(project_id: int) -> dict:
-    """Pull the repo, find changed files, and patch only affected doc pages."""
+    """Refresh the source, find changed files, and patch only affected doc pages."""
     with session_scope() as s:
         p = s.get(Project, project_id)
         if not p:
             raise ValueError(f"Project {project_id} not found")
-        repo_url, branch = p.repo_url, p.branch
         provider_name, llm_config = p.llm_provider, p.llm_config
         repo_name = p.name
+        s.expunge(p)
+        project = p
 
-    _set_status(project_id, "analyzing", "Pulling latest…")
-    new_sha = clone_or_pull(project_id, repo_url, branch)
+    _set_status(
+        project_id, "analyzing",
+        "Pulling latest…" if project.source_type == "git" else "Re-reading local path…",
+    )
+    new_sha = prepare_source(project)
 
     _set_status(project_id, "analyzing", "Diffing against last analysis…")
-    added, modified, deleted, current_hashes = _diff_against_db(project_id)
+    added, modified, deleted, current_hashes = _diff_against_db(project)
 
     if not (added or modified or deleted):
         _set_status(project_id, "ready", "No changes detected")
@@ -64,7 +68,7 @@ async def run_update(project_id: int) -> dict:
 
     _set_status(project_id, "analyzing", f"Summarizing {len(added) + len(modified)} changed files…")
     walked_changed, new_summaries = await _summarize_files_by_path(
-        llm, project_id, added + modified,
+        llm, project, added + modified,
     )
 
     # Build change descriptions per module
@@ -106,13 +110,10 @@ async def run_update(project_id: int) -> dict:
         else:
             # Module didn't exist before — generate fresh from scratch using
             # the current files in that module.
-            from ..repo.walker import walk_repo
-            files = [f for f in walk_repo(repo_path(project_id)) if _module_of(f.path) == module]
-            # We need summaries for every file in the module; reuse fresh ones
-            # where we have them, otherwise summarize the rest.
+            files = [f for f in walk_repo(working_path(project)) if _module_of(f.path) == module]
             missing = [f for f in files if f.path not in new_summaries]
             if missing:
-                _, more = await _summarize_files_by_path(llm, project_id, [f.path for f in missing])
+                _, more = await _summarize_files_by_path(llm, project, [f.path for f in missing])
                 new_summaries.update(more)
             updated = await generate_module_page(llm, module, files, new_summaries)
 

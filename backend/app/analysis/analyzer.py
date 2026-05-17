@@ -6,7 +6,7 @@ from pathlib import Path
 from ..config import settings
 from ..db import session_scope, Project, FileRecord, DocPage
 from ..llm import get_provider
-from ..repo.cloner import clone_or_pull, repo_path
+from ..repo.cloner import prepare_source, working_path
 from ..repo.walker import walk_repo, WalkedFile
 from .summarizer import summarize_many
 from .doc_generator import (
@@ -36,20 +36,24 @@ def _set_status(project_id: int, status: str, detail: str | None = None) -> None
 
 
 async def run_initial_analysis(project_id: int) -> None:
-    """End-to-end: clone -> walk -> summarize -> generate docs -> persist."""
+    """End-to-end: prepare source -> walk -> summarize -> generate docs -> persist."""
     with session_scope() as s:
         p = s.get(Project, project_id)
         if not p:
             raise ValueError(f"Project {project_id} not found")
-        repo_url, branch = p.repo_url, p.branch
         provider_name, llm_config = p.llm_provider, p.llm_config
         repo_name = p.name
+        s.expunge(p)
+        project = p
 
-    _set_status(project_id, "analyzing", "Cloning repo…")
-    head_sha = clone_or_pull(project_id, repo_url, branch)
+    _set_status(
+        project_id, "analyzing",
+        "Cloning repo…" if project.source_type == "git" else "Reading local path…",
+    )
+    head_sha = prepare_source(project)
 
     _set_status(project_id, "analyzing", "Walking files…")
-    files = walk_repo(repo_path(project_id))
+    files = walk_repo(working_path(project))
     log.info("project %s: %d files to analyze", project_id, len(files))
 
     llm = get_provider(provider_name, llm_config)
@@ -109,11 +113,11 @@ async def run_initial_analysis(project_id: int) -> None:
         p.status_detail = f"{len(files)} files, {len(grouped)} modules"
 
 
-async def _summarize_files_by_path(llm, project_id: int, paths: list[str]) -> tuple[list[WalkedFile], dict[str, str]]:
+async def _summarize_files_by_path(llm, project: Project, paths: list[str]) -> tuple[list[WalkedFile], dict[str, str]]:
     """Helper: given repo-relative paths, walk + summarize just those."""
     if not paths:
         return [], {}
-    root = repo_path(project_id)
+    root = working_path(project)
     walked: list[WalkedFile] = []
     from ..repo.walker import _hash_file  # type: ignore
     for rel in paths:
