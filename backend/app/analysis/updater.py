@@ -2,10 +2,11 @@ from __future__ import annotations
 import json
 import logging
 
-from ..db import session_scope, Project, FileRecord, DocPage
+from ..db import session_scope, Project, FileRecord, DocPage, RunEvent
 from ..llm import get_provider
 from ..repo.cloner import prepare_source, working_path
 from ..repo.walker import walk_repo
+from ..codegraph.service import build_code_graph, persist_code_graph
 from .analyzer import (
     docs_dir, _module_slug, _set_status, _summarize_files_by_path,
 )
@@ -59,10 +60,17 @@ async def run_update(project_id: int) -> dict:
 
     _set_status(project_id, "analyzing", "Diffing against last analysis…")
     added, modified, deleted, current_hashes = _diff_against_db(project)
+    current_files = walk_repo(working_path(project))
 
     if not (added or modified or deleted):
+        code_graph = build_code_graph(current_files)
+        with session_scope() as s:
+            persist_code_graph(s, project_id, code_graph)
         _set_status(project_id, "ready", "No changes detected")
         return {"added": [], "modified": [], "deleted": [], "patched_pages": []}
+
+    _set_status(project_id, "analyzing", "Rebuilding code graph…")
+    code_graph = build_code_graph(current_files)
 
     llm = get_provider(provider_name, llm_config)
 
@@ -172,6 +180,8 @@ async def run_update(project_id: int) -> dict:
                     summary=new_summaries.get(path),
                 ))
 
+        persist_code_graph(s, project_id, code_graph)
+
         # Ensure DocPage records exist for any newly-created module pages
         existing_slugs = {
             d.slug for d in s.query(DocPage).filter(DocPage.project_id == project_id).all()
@@ -192,6 +202,7 @@ async def run_update(project_id: int) -> dict:
             f"+{len(added)} ~{len(modified)} -{len(deleted)} files; "
             f"{len(patched)} pages updated"
         )
+        s.add(RunEvent(project_id=project_id, kind="update"))
 
     return {
         "added": added, "modified": modified, "deleted": deleted,

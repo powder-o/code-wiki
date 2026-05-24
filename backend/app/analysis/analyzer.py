@@ -4,10 +4,11 @@ import logging
 from pathlib import Path
 
 from ..config import settings
-from ..db import session_scope, Project, FileRecord, DocPage
+from ..db import session_scope, Project, FileRecord, DocPage, RunEvent
 from ..llm import get_provider
 from ..repo.cloner import prepare_source, working_path
 from ..repo.walker import walk_repo, WalkedFile
+from ..codegraph.service import build_code_graph, persist_code_graph
 from .summarizer import summarize_many
 from .doc_generator import (
     generate_module_page, generate_overview, generate_architecture,
@@ -35,6 +36,39 @@ def _set_status(project_id: int, status: str, detail: str | None = None) -> None
             p.status_detail = detail
 
 
+def run_graph_analysis(project_id: int) -> None:
+    """Prepare source and persist only the deterministic code graph."""
+    with session_scope() as s:
+        p = s.get(Project, project_id)
+        if not p:
+            raise ValueError(f"Project {project_id} not found")
+        s.expunge(p)
+        project = p
+
+    _set_status(
+        project_id, "graphing",
+        "Cloning repo…" if project.source_type == "git" else "Reading local path…",
+    )
+    head_sha = prepare_source(project)
+
+    _set_status(project_id, "graphing", "Walking files…")
+    files = walk_repo(working_path(project))
+
+    _set_status(project_id, "graphing", "Building code graph…")
+    code_graph = build_code_graph(files)
+
+    with session_scope() as s:
+        persist_code_graph(s, project_id, code_graph)
+        p = s.get(Project, project_id)
+        if p:
+            p.last_commit_sha = head_sha
+            p.status = "graph_ready"
+            p.status_detail = (
+                f"{len(files)} files; "
+                f"{len(code_graph.nodes)} graph nodes, {len(code_graph.edges)} edges"
+            )
+
+
 async def run_initial_analysis(project_id: int) -> None:
     """End-to-end: prepare source -> walk -> summarize -> generate docs -> persist."""
     with session_scope() as s:
@@ -55,6 +89,9 @@ async def run_initial_analysis(project_id: int) -> None:
     _set_status(project_id, "analyzing", "Walking files…")
     files = walk_repo(working_path(project))
     log.info("project %s: %d files to analyze", project_id, len(files))
+
+    _set_status(project_id, "analyzing", "Building code graph…")
+    code_graph = build_code_graph(files)
 
     llm = get_provider(provider_name, llm_config)
 
@@ -92,6 +129,7 @@ async def run_initial_analysis(project_id: int) -> None:
                 project_id=project_id, path=f.path, sha256=f.sha256,
                 summary=summaries.get(f.path),
             ))
+        persist_code_graph(s, project_id, code_graph)
 
         s.add(DocPage(
             project_id=project_id, slug="overview", title="Overview",
@@ -111,6 +149,7 @@ async def run_initial_analysis(project_id: int) -> None:
         p.last_commit_sha = head_sha
         p.status = "ready"
         p.status_detail = f"{len(files)} files, {len(grouped)} modules"
+        s.add(RunEvent(project_id=project_id, kind="initial"))
 
 
 async def _summarize_files_by_path(llm, project: Project, paths: list[str]) -> tuple[list[WalkedFile], dict[str, str]]:

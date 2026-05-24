@@ -35,8 +35,8 @@ export default function AddProject() {
         llm_provider: provider,
         llm_config,
       });
-      await api.analyze(project.id);
-      nav(`/projects/${project.id}`);
+      await api.buildGraph(project.id);
+      nav(`/projects/${project.id}/graph`);
     } catch (e) {
       setErr(String(e));
     } finally {
@@ -141,7 +141,7 @@ export default function AddProject() {
 
       <div className="form-actions">
         <button disabled={submitting} className="btn btn-primary">
-          {submitting ? "Creating…" : "Create & analyze"}
+          {submitting ? "Creating…" : "Create & build graph"}
         </button>
       </div>
     </form>

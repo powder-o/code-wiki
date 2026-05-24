@@ -1,6 +1,28 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, Project } from "../api";
+import Sparkline from "../components/Sparkline";
+
+const STATUS_LABELS: Record<string, string> = {
+  ready: "ready",
+  graph_ready: "graph ready",
+  analyzing: "working",
+  graphing: "building graph",
+  error: "error",
+  created: "new",
+};
+
+function statusDotClass(status: string): string {
+  if (status === "ready" || status === "graph_ready") return "dot-ready";
+  if (status === "analyzing" || status === "graphing") return "dot-analyzing";
+  if (status === "error") return "dot-error";
+  return "dot-created";
+}
+
+function shortenRepo(url: string): string {
+  // strip protocol + .git, collapse user-prefix on local paths
+  return url.replace(/^https?:\/\//, "").replace(/\.git$/, "");
+}
 
 export default function ProjectsList() {
   const [projects, setProjects] = useState<Project[] | null>(null);
@@ -17,8 +39,10 @@ export default function ProjectsList() {
     return (
       <div className="empty">
         <h2>No projects yet</h2>
-        <p>Connect a Git repo to generate its wiki.</p>
-        <Link to="/new" className="btn btn-primary">+ New project</Link>
+        <p>Connect a Git repo or point at a local path to generate its wiki.</p>
+        <div style={{ marginTop: 16 }}>
+          <Link to="/new" className="btn btn-primary">+ New project</Link>
+        </div>
       </div>
     );
   }
@@ -29,20 +53,16 @@ export default function ProjectsList() {
       <ul className="project-list">
         {projects.map((p) => (
           <li key={p.id}>
-            <Link to={`/projects/${p.id}`} className="project-card">
-              <div className="project-card-head">
-                <strong>{p.name}</strong>
-                <span className={`status status-${p.status}`}>{p.status}</span>
+            <Link to={`/projects/${p.id}`} className="project-row">
+              <div className="project-row-main">
+                <span
+                  className={`dot ${statusDotClass(p.status)}`}
+                  title={STATUS_LABELS[p.status] ?? p.status}
+                />
+                <span className="project-row-name">{p.name}</span>
+                <span className="project-row-meta">{shortenRepo(p.repo_url)}</span>
               </div>
-              <div className="muted small">
-                <span className="tag">{p.source_type === "local" ? "local" : "git"}</span>
-                {" "}{p.repo_url}
-              </div>
-              <div className="muted small">
-                {p.llm_provider}
-                {p.source_type === "git" ? ` · branch ${p.branch}` : ""}
-                {p.status_detail ? ` · ${p.status_detail}` : ""}
-              </div>
+              <Sparkline data={p.activity_7d ?? Array(7).fill(0)} />
             </Link>
           </li>
         ))}

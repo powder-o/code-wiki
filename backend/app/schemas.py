@@ -28,6 +28,9 @@ class ProjectOut(BaseModel):
     last_commit_sha: str | None
     created_at: datetime
     updated_at: datetime
+    # Doc-update count per day for the last 7 days (oldest -> today). Only
+    # populated on the list endpoint; null on the detail endpoint.
+    activity_7d: list[int] | None = None
 
     class Config:
         from_attributes = True

@@ -8,7 +8,7 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <Link to="/" className="brand">
-          <span className="brand-mark">📘</span> Code Wiki
+          <span className="brand-mark" aria-hidden /> Code Wiki
         </Link>
         <nav>
           <Link to="/new">+ New project</Link>

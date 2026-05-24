@@ -1,4 +1,17 @@
 node_modules/
 dist/
 .vite/
+*.tsbuildinfo
 *.log
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+data/
+.pytest_cache/
+*.md
+uv.lock
+package-lock.json
+docs/
+.DS_Store

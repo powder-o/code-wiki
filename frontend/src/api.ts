@@ -13,6 +13,7 @@ export interface Project {
   last_commit_sha: string | null;
   created_at: string;
   updated_at: string;
+  activity_7d?: number[] | null;
 }
 
 export interface DocPage {
@@ -23,6 +24,25 @@ export interface DocPage {
 
 export interface DocPageContent extends DocPage {
   content: string;
+}
+
+export interface CodeGraphNode {
+  id: string;
+  label: string;
+  language: string | null;
+  symbol_count: number;
+}
+
+export interface CodeGraphLink {
+  source: string;
+  target: string;
+  weight: number;
+  symbols: string[];
+}
+
+export interface CodeGraph {
+  nodes: CodeGraphNode[];
+  links: CodeGraphLink[];
 }
 
 export interface ProjectCreate {
@@ -55,10 +75,14 @@ export const api = {
     fetch(`/api/projects/${id}`, { method: "DELETE" }).then(json),
   analyze: (id: number) =>
     fetch(`/api/projects/${id}/analyze`, { method: "POST" }).then(json),
+  buildGraph: (id: number) =>
+    fetch(`/api/projects/${id}/graph/build`, { method: "POST" }).then(json),
   update: (id: number) =>
     fetch(`/api/projects/${id}/update`, { method: "POST" }).then(json),
   listDocs: (id: number) =>
     fetch(`/api/projects/${id}/docs`).then(json<DocPage[]>),
   getDoc: (id: number, slug: string) =>
     fetch(`/api/projects/${id}/docs/${slug}`).then(json<DocPageContent>),
+  getGraph: (id: number) =>
+    fetch(`/api/projects/${id}/graph`).then(json<CodeGraph>),
 };

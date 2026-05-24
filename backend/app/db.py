@@ -32,6 +32,14 @@ class Project(Base):
 
     files = relationship("FileRecord", back_populates="project", cascade="all, delete-orphan")
     docs = relationship("DocPage", back_populates="project", cascade="all, delete-orphan")
+    runs = relationship("RunEvent", cascade="all, delete-orphan",
+                        primaryjoin="Project.id == RunEvent.project_id")
+    code_symbols = relationship("CodeSymbol", cascade="all, delete-orphan",
+                                primaryjoin="Project.id == CodeSymbol.project_id")
+    code_calls = relationship("CodeCall", cascade="all, delete-orphan",
+                              primaryjoin="Project.id == CodeCall.project_id")
+    code_edges = relationship("CodeEdge", cascade="all, delete-orphan",
+                              primaryjoin="Project.id == CodeEdge.project_id")
 
 
 class FileRecord(Base):
@@ -45,6 +53,55 @@ class FileRecord(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     project = relationship("Project", back_populates="files")
+
+
+class RunEvent(Base):
+    """One row per successful analyze/update run. Drives the activity sparkline."""
+    __tablename__ = "run_events"
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    kind = Column(String, nullable=False)  # "initial" | "update"
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class CodeSymbol(Base):
+    """A callable/class/component symbol defined in a source file."""
+    __tablename__ = "code_symbols"
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    file_path = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    kind = Column(String, nullable=False)
+    language = Column(String, nullable=False)
+    start_line = Column(Integer, nullable=False)
+    end_line = Column(Integer, nullable=False)
+    signature = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class CodeCall(Base):
+    """A call/reference extracted from a source file."""
+    __tablename__ = "code_calls"
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    file_path = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    language = Column(String, nullable=False)
+    start_line = Column(Integer, nullable=False)
+    context = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class CodeEdge(Base):
+    """A resolved file-to-file relationship: source defines, target calls."""
+    __tablename__ = "code_edges"
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    source_path = Column(String, nullable=False)
+    target_path = Column(String, nullable=False)
+    symbols_json = Column(Text, nullable=False)
+    weight = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class DocPage(Base):

@@ -1,11 +1,14 @@
 import json
 import logging
+from datetime import date, datetime, timedelta
 from fastapi import APIRouter, BackgroundTasks, HTTPException
+from sqlalchemy import func
 
-from ..db import session_scope, Project, DocPage
+from ..db import session_scope, Project, DocPage, RunEvent
 from ..schemas import ProjectCreate, ProjectOut, DocPageOut, DocPageContent, UpdateResult
-from ..analysis.analyzer import run_initial_analysis, docs_dir
+from ..analysis.analyzer import run_initial_analysis, run_graph_analysis, docs_dir
 from ..analysis.updater import run_update
+from ..codegraph.service import graph_payload_for_project
 
 log = logging.getLogger("codewiki.api")
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -14,7 +17,35 @@ router = APIRouter(prefix="/api/projects", tags=["projects"])
 @router.get("", response_model=list[ProjectOut])
 def list_projects():
     with session_scope() as s:
-        return [ProjectOut.model_validate(p) for p in s.query(Project).order_by(Project.id.desc()).all()]
+        projects = s.query(Project).order_by(Project.id.desc()).all()
+
+        today = date.today()
+        window_start = datetime.combine(today - timedelta(days=6), datetime.min.time())
+        rows = (
+            s.query(
+                RunEvent.project_id,
+                func.date(RunEvent.created_at).label("d"),
+                func.count(RunEvent.id).label("n"),
+            )
+            .filter(RunEvent.created_at >= window_start)
+            .group_by(RunEvent.project_id, "d")
+            .all()
+        )
+        by_project: dict[int, dict[str, int]] = {}
+        for pid, d, n in rows:
+            by_project.setdefault(pid, {})[str(d)] = n
+
+        out = []
+        for p in projects:
+            counts = by_project.get(p.id, {})
+            activity = [
+                counts.get(str(today - timedelta(days=i)), 0)
+                for i in range(6, -1, -1)  # oldest -> today
+            ]
+            item = ProjectOut.model_validate(p)
+            item.activity_7d = activity
+            out.append(item)
+        return out
 
 
 @router.post("", response_model=ProjectOut)
@@ -78,6 +109,18 @@ async def _analyze_task(project_id: int):
                 p.status_detail = str(e)
 
 
+def _graph_task(project_id: int):
+    try:
+        run_graph_analysis(project_id)
+    except Exception as e:
+        log.exception("graph analysis failed for project %s", project_id)
+        with session_scope() as s:
+            p = s.get(Project, project_id)
+            if p:
+                p.status = "error"
+                p.status_detail = str(e)
+
+
 async def _update_task(project_id: int):
     try:
         await run_update(project_id)
@@ -96,12 +139,26 @@ def analyze(project_id: int, bg: BackgroundTasks):
         p = s.get(Project, project_id)
         if not p:
             raise HTTPException(404, "Project not found")
-        if p.status == "analyzing":
-            raise HTTPException(409, "Project is already being analyzed")
+        if p.status in {"analyzing", "graphing"}:
+            raise HTTPException(409, "Project is already being processed")
         p.status = "analyzing"
         p.status_detail = "Queued…"
     bg.add_task(_analyze_task, project_id)
     return {"ok": True, "status": "analyzing"}
+
+
+@router.post("/{project_id}/graph/build")
+def build_graph(project_id: int, bg: BackgroundTasks):
+    with session_scope() as s:
+        p = s.get(Project, project_id)
+        if not p:
+            raise HTTPException(404, "Project not found")
+        if p.status in {"analyzing", "graphing"}:
+            raise HTTPException(409, "Project is already being processed")
+        p.status = "graphing"
+        p.status_detail = "Queued graph build…"
+    bg.add_task(_graph_task, project_id)
+    return {"ok": True, "status": "graphing"}
 
 
 @router.post("/{project_id}/update", response_model=None)
@@ -111,8 +168,8 @@ def update(project_id: int, bg: BackgroundTasks):
         p = s.get(Project, project_id)
         if not p:
             raise HTTPException(404, "Project not found")
-        if p.status == "analyzing":
-            raise HTTPException(409, "Project is already being analyzed")
+        if p.status in {"analyzing", "graphing"}:
+            raise HTTPException(409, "Project is already being processed")
         has_baseline = (
             s.query(FileRecord.id).filter(FileRecord.project_id == project_id).first()
             is not None
@@ -139,6 +196,18 @@ def list_docs(project_id: int):
             raise HTTPException(404, "Project not found")
         pages = s.query(DocPage).filter(DocPage.project_id == project_id).order_by(DocPage.slug).all()
         return [DocPageOut.model_validate(d) for d in pages]
+
+
+# ---- code graph -------------------------------------------------------------
+
+
+@router.get("/{project_id}/graph")
+def get_graph(project_id: int):
+    with session_scope() as s:
+        p = s.get(Project, project_id)
+        if not p:
+            raise HTTPException(404, "Project not found")
+    return graph_payload_for_project(project_id)
 
 
 @router.get("/{project_id}/docs/{slug:path}", response_model=DocPageContent)

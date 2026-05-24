@@ -14,7 +14,8 @@ SKIP_DIRS = {
 # Code-ish extensions worth summarizing. Everything else gets listed but not
 # fed to the LLM, keeping the POC's token bill modest.
 CODE_EXTS = {
-    ".py", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java", ".kt",
+    ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".htm", ".css",
+    ".go", ".rs", ".java", ".kt",
     ".rb", ".php", ".c", ".h", ".cpp", ".hpp", ".cs", ".swift", ".scala",
     ".sh", ".bash", ".sql", ".vue", ".svelte",
     # Config / docs that often matter for context
